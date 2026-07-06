@@ -692,6 +692,7 @@ function botThink(){
     for(const d of [-1, 1]){
       const l = bot.lane + d;
       if(l < 0 || l >= LANES) continue;
+      if(p1.alive && l === p1.lane) continue; // полоса игрока — не вариант
       opts.push({d, v: value(nearest(l))});
     }
     opts.sort((a,b) => b.v - a.v);
@@ -703,6 +704,7 @@ function botThink(){
     for(const d of [-1, 1]){
       const l = bot.lane + d;
       if(l < 0 || l >= LANES) continue;
+      if(p1.alive && l === p1.lane) continue; // полоса игрока — не вариант
       const en = nearest(l);
       opts.push({d, v: value(en && en.type[0] === 't' ? en : null)});
     }
@@ -713,8 +715,12 @@ function botThink(){
 }
 function botAct(){
   const a = botPlan.action; botPlan = null;
-  if(a === 'left') tryMove(bot, p1, -1);
-  else if(a === 'right') tryMove(bot, p1, 1);
+  if(a === 'left' || a === 'right'){
+    const d = a === 'left' ? -1 : 1;
+    // за время реакции игрок мог занять целевую полосу — тогда отменяем и передумываем
+    if(p1.alive && bot.lane + d === p1.lane) return;
+    tryMove(bot, p1, d);
+  }
   else if(a === 'jump') doJump(bot);
   else if(a === 'slide') doSlide(bot);
 }
