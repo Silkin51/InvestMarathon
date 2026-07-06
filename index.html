@@ -68,14 +68,15 @@
   .stats .s b{font-size:20px; font-variant-numeric:tabular-nums;}
   .stats .s span{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;}
   #chartCard{background:#0c1119; border:1px solid var(--line); border-radius:12px; padding:10px;}
-  .totals{width:300px; display:flex; flex-direction:column; gap:3px; margin:2px 0;
+  .totals{width:316px; display:flex; flex-direction:column; gap:3px; margin:2px 0;
     background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:9px 12px;}
-  .totals .tr{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--muted);
+  .totals .tr{display:flex; align-items:center; gap:7px; font-size:13px; color:var(--muted);
     font-variant-numeric:tabular-nums;}
-  .totals .lbl{flex:1; text-align:left;}
-  .totals .cnt{color:var(--muted); font-size:12px; min-width:32px; text-align:right;}
-  .totals b{min-width:64px; text-align:right;}
-  .totals .pos{color:var(--t1);} .totals .neg{color:var(--obstacle);}
+  .totals .tr.th{font-size:11px; text-transform:uppercase; letter-spacing:.05em; font-weight:600;}
+  .totals .lbl{flex:1; text-align:left; white-space:nowrap;}
+  .totals .col{min-width:84px; text-align:right; font-weight:700; white-space:nowrap;}
+  .totals .col i{font-style:normal; font-weight:400; color:var(--muted); font-size:11px; margin-left:4px;}
+  .totals .pos{color:var(--t1);} .totals .neg{color:var(--obstacle);} .totals .dim{color:#4a5462; font-weight:400;}
   .hint{font-size:12px; color:#93a0b0; line-height:1.5; max-width:340px;}
   kbd{background:#222b38; border:1px solid var(--line); border-bottom-width:2px; border-radius:5px;
     padding:1px 6px; font-size:12px; font-family:inherit;}
@@ -791,22 +792,25 @@ function gameOver(){
   const botLine = bot.alive
     ? `<p class="hint" style="color:var(--bot)">🤖 Бот ещё бежал со счётом ${fmt(bot.score)} — ты проиграл гонку.</p>`
     : `<p class="hint" style="color:var(--t1)">🤖 Бот выбыл на ${botOutAt.toFixed(0)} с — ты его пережил!</p>`;
-  // итог по каждому виду фишек
+  // итог по каждому виду фишек: игрок и бот
   const fmtSigned = v => (v >= 0 ? '+' : '−') + fmt(Math.abs(v));
   const TOTALS = [
     {k:'t1',  css:'var(--t1)',       label:'Фикс +100'},
-    {k:'t2',  css:'var(--t2)',       label:'Множитель +3%'},
-    {k:'t3',  css:'var(--t3)',       label:'Гэмбл +20%/−10%'},
-    {k:'t4',  css:'var(--t4)',       label:'Гэмбл +100%/−50%'},
+    {k:'t2',  css:'var(--t2)',       label:'Множ +3%'},
+    {k:'t3',  css:'var(--t3)',       label:'Гэмбл ±20/10'},
+    {k:'t4',  css:'var(--t4)',       label:'Гэмбл ±100/50'},
     {k:'bar', css:'var(--obstacle)', label:'Барьеры'},
   ];
-  const totalRows = TOTALS.filter(r => p1.stats[r.k].n > 0).map(r => {
-    const s = p1.stats[r.k];
-    return `<div class="tr"><span class="sw" style="background:${r.css}"></span>
-      <span class="lbl">${r.label}</span><span class="cnt">×${s.n}</span>
-      <b class="${s.sum >= 0 ? 'pos' : 'neg'}">${fmtSigned(s.sum)}</b></div>`;
-  }).join('');
-  const totalsBlock = totalRows ? `<div class="totals">${totalRows}</div>` : '';
+  const cell = s => s.n === 0 ? '<span class="col dim">—</span>'
+    : `<span class="col ${s.sum >= 0 ? 'pos' : 'neg'}">${fmtSigned(s.sum)}<i>×${s.n}</i></span>`;
+  const totalRows = TOTALS.filter(r => p1.stats[r.k].n > 0 || bot.stats[r.k].n > 0).map(r =>
+    `<div class="tr"><span class="sw" style="background:${r.css}"></span>
+      <span class="lbl">${r.label}</span>${cell(p1.stats[r.k])}${cell(bot.stats[r.k])}</div>`
+  ).join('');
+  const totalsBlock = totalRows ? `<div class="totals">
+    <div class="tr th"><span class="sw" style="background:transparent"></span><span class="lbl"></span>
+      <span class="col" style="color:var(--player)">Ты</span><span class="col" style="color:var(--bot)">Бот</span></div>
+    ${totalRows}</div>` : '';
   el.overlay.innerHTML = `<h1>Игра окончена</h1>
     <div class="stats">
       <div class="s"><b>${Math.floor(distance)} м</b><span>дистанция</span></div>
