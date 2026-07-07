@@ -83,6 +83,15 @@
   button{background:var(--player); color:#06121f; border:0; border-radius:10px; padding:12px 26px;
     font-size:16px; font-weight:700; cursor:pointer; margin-top:4px;}
   button:active{transform:translateY(1px);}
+  button:disabled{opacity:.35; cursor:default;}
+  button.secondary{background:#222b38; color:var(--text); border:1px solid var(--line);}
+  .wallet{font-size:17px; font-weight:700; color:#ffd166; font-variant-numeric:tabular-nums;
+    text-shadow:0 1px 8px rgba(0,0,0,.5);}
+  .buy{padding:6px 12px; font-size:12px; margin:0; border-radius:8px; flex:0 0 auto;
+    background:#ffd166; color:#1f1500;}
+  .explain .b{align-items:center;}
+  .explain .b.locked .chip{background:#3a4150 !important; color:#8b96a5;}
+  .explain .b.locked .d{color:#5d6875;}
   .hidden{display:none !important;}
 
   #flash{position:fixed; inset:0; background:radial-gradient(ellipse at center, rgba(240,71,71,0) 40%, rgba(240,71,71,.45) 100%);
@@ -107,34 +116,14 @@
     <h2>График счёта</h2>
     <canvas id="liveChart" width="196" height="110" style="width:100%;display:block;"></canvas>
   </div>
-  <div class="card legend">
-    <h2>Бонусы</h2>
-    <div><span class="sw" style="background:var(--t1)"></span>Фикс <b>+100</b></div>
-    <div><span class="sw" style="background:var(--t2)"></span>Множ <b>+3%</b></div>
-    <div><span class="sw" style="background:var(--t3)"></span>Гэмбл <b>+20% / −10%</b></div>
-    <div><span class="sw" style="background:var(--t4)"></span>Гэмбл <b>+100% / −50%</b></div>
-    <div><span class="sw" style="background:var(--obstacle)"></span>Барьер <b>−100</b></div>
-  </div>
+  <div class="card legend" id="legendCard"></div>
   <div class="card">
     <h2>События</h2>
     <div id="log"></div>
   </div>
 </div>
 
-<div id="overlay">
-  <h1>Invest Runner</h1>
-  <p>Бег <b>сжигает очки</b>. Счёт = жизнь: 0 — конец. Рядом бежит <b style="color:var(--bot)">бот-конкурент</b> и собирает те же бонусы — не отдавай ему лучшие!</p>
-  <div class="explain">
-    <div class="b"><span class="chip" style="background:var(--t1)">+100</span><span class="d"><b>Фикс +100.</b> Безопасно. Важнее всего на старте, пока счёт мал.</span></div>
-    <div class="b"><span class="chip" style="background:var(--t2)">+3%</span><span class="d"><b>Множитель +3%.</b> Слабый, но безопасный прирост от текущего счёта.</span></div>
-    <div class="b"><span class="chip" style="background:var(--t3)">+20% / −10%</span><span class="d"><b>Малый гэмбл.</b> Орёл/решка: либо +20%, либо −10% к счёту.</span></div>
-    <div class="b"><span class="chip" style="background:var(--t4)">+100% / −50%</span><span class="d"><b>Гэмбл.</b> Орёл/решка: либо +100%, либо −50%. Крупная ставка.</span></div>
-    <div class="b"><span class="chip" style="background:var(--obstacle);color:#fff">−100</span><span class="d"><b>Барьер.</b> Объезжай, перепрыгивай <b>↑</b>, под перекладину — подкат <b>↓</b>.</span></div>
-  </div>
-  <p class="hint"><kbd>←</kbd> <kbd>→</kbd> — дорожка · <kbd>↑</kbd> — прыжок · <kbd>↓</kbd> — подкат. Свайпы на телефоне.<br>
-  Если сосед вплотную и ты идёшь в его полосу — герой <b>перепрыгнет через неё</b> сразу на две.</p>
-  <button id="startBtn">Старт</button>
-</div>
+<div id="overlay"></div>
 
 <script src="three.min.js"></script>
 <script>
@@ -154,6 +143,23 @@ const BONUS = {
   t3:{c:0xf0b429, css:'#f0b429', line1:'+20%',  line2:'−10%', apply:s=>s*(Math.random()<0.5?1.2:0.9), tag:pct},
   t4:{c:0xff7a18, css:'#ff7a18', line1:'+100%', line2:'−50%', apply:s=>s*(Math.random()<0.5?2:0.5),   tag:pct},
 };
+
+// ---- прогресс игрока: капитал и открытые фишки (живёт между забегами) ----
+const SAVE_KEY = 'investRunnerProgress';
+const UNLOCKS = [
+  {k:'t2', cost:2000,  label:'Множитель +3%',    chip:'+3%'},
+  {k:'t3', cost:5000,  label:'Гэмбл +20% / −10%',  chip:'+20/−10', req:'t2'},
+  {k:'t4', cost:12000, label:'Гэмбл +100% / −50%', chip:'+100/−50', req:'t3'},
+];
+function loadProgress(){
+  try{
+    const s = JSON.parse(localStorage.getItem(SAVE_KEY));
+    if(s) return {wallet:s.wallet || 0, unlocked:Object.assign({t2:false, t3:false, t4:false}, s.unlocked)};
+  }catch(e){}
+  return {wallet:0, unlocked:{t2:false, t3:false, t4:false}};
+}
+function saveProgress(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(progress)); }catch(e){} }
+let progress = loadProgress();
 
 let state, t, spawnAcc, distance, history, events, sampleAcc;
 let p1, bot, botPlan, botNextThink, botOutAt;
@@ -511,14 +517,20 @@ function makeOverhead(){ // перекладина сверху: объехат�
 }
 
 let ents = [];
+function pickType(){
+  if(Math.random() < 0.30) return Math.random() < 0.4 ? 'overhead' : 'obstacle';
+  // монеты — только открытые, с исходными пропорциями (32/20/11/7)
+  const pool = [['t1', 32]];
+  if(progress.unlocked.t2) pool.push(['t2', 20]);
+  if(progress.unlocked.t3) pool.push(['t3', 11]);
+  if(progress.unlocked.t4) pool.push(['t4', 7]);
+  let tot = 0; for(const [, w] of pool) tot += w;
+  let r = Math.random()*tot;
+  for(const [k, w] of pool){ if((r -= w) <= 0) return k; }
+  return 't1';
+}
 function spawn(){
-  const r = Math.random(); let type;
-  if(r < 0.30) type = 'obstacle';
-  else if(r < 0.62) type = 't1';
-  else if(r < 0.82) type = 't2';
-  else if(r < 0.93) type = 't3';
-  else type = 't4';
-  if(type === 'obstacle' && Math.random() < 0.4) type = 'overhead';
+  const type = pickType();
   const lane = Math.floor(Math.random()*LANES);
   let mesh;
   if(type === 'obstacle'){ mesh = makeBarrier(); }
@@ -755,11 +767,59 @@ function reset(){
 }
 reset();
 
+function renderLegend(){
+  const rows = [`<div><span class="sw" style="background:var(--t1)"></span>Фикс <b>+100</b></div>`];
+  if(progress.unlocked.t2) rows.push(`<div><span class="sw" style="background:var(--t2)"></span>Множ <b>+3%</b></div>`);
+  if(progress.unlocked.t3) rows.push(`<div><span class="sw" style="background:var(--t3)"></span>Гэмбл <b>+20% / −10%</b></div>`);
+  if(progress.unlocked.t4) rows.push(`<div><span class="sw" style="background:var(--t4)"></span>Гэмбл <b>+100% / −50%</b></div>`);
+  rows.push(`<div><span class="sw" style="background:var(--obstacle)"></span>Барьер <b>−100</b></div>`);
+  document.getElementById('legendCard').innerHTML = '<h2>Бонусы</h2>' + rows.join('');
+}
+
+// ---- стартовое меню: капитал, доступные фишки, открытие новых ----
+function renderMenu(){
+  state = 'ready';
+  const rows = [
+    `<div class="b"><span class="chip" style="background:var(--t1)">+100</span><span class="d"><b>Фикс +100</b></span></div>`,
+  ];
+  for(const u of UNLOCKS){
+    if(progress.unlocked[u.k]){
+      const b = BONUS[u.k];
+      rows.push(`<div class="b"><span class="chip" style="background:${b.css}">${u.chip}</span><span class="d"><b>${u.label}</b></span></div>`);
+    } else {
+      const reqOk = !u.req || progress.unlocked[u.req];
+      if(!reqOk) continue; // следующие ступени пока не показываем
+      const afford = progress.wallet >= u.cost;
+      rows.push(`<div class="b locked"><span class="chip">🔒</span><span class="d"><b>${u.label}</b></span>
+        <button class="buy" data-k="${u.k}" data-cost="${u.cost}" ${afford ? '' : 'disabled'}>Открыть · ${fmt(u.cost)}</button></div>`);
+      break; // показываем только ближайшую к открытию
+    }
+  }
+  rows.push(`<div class="b"><span class="chip" style="background:var(--obstacle);color:#fff">−100</span><span class="d"><b>Барьер</b> · ↑ прыжок · ↓ подкат</span></div>`);
+  el.overlay.innerHTML = `<h1>Invest Runner</h1>
+    <div class="wallet">💰 ${fmt(progress.wallet)}</div>
+    <div class="explain">${rows.join('')}</div>
+    <p class="hint"><kbd>←</kbd> <kbd>→</kbd> дорожка · <kbd>↑</kbd> прыжок · <kbd>↓</kbd> подкат · пик счёта забега идёт в капитал</p>
+    <button id="startBtn">Старт</button>`;
+  el.overlay.classList.remove('hidden');
+  document.getElementById('startBtn').onclick = start;
+  for(const btn of el.overlay.querySelectorAll('.buy'))
+    btn.onclick = () => {
+      const k = btn.dataset.k, cost = +btn.dataset.cost;
+      if(progress.wallet < cost || progress.unlocked[k]) return;
+      progress.wallet -= cost;
+      progress.unlocked[k] = true;
+      saveProgress();
+      renderMenu();
+    };
+}
+
 function start(){
   reset(); state = 'play';
   audio();
   if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
   el.log.innerHTML = '';
+  renderLegend();
   el.overlay.classList.add('hidden');
   el.hud.classList.remove('hidden');
   el.dist.classList.remove('hidden');
@@ -782,6 +842,9 @@ function gameOver(){
   sfx.over();
   el.tag1.classList.add('hidden');
   el.tag2.classList.add('hidden');
+  const earned = Math.floor(p1.peak);
+  progress.wallet += earned;
+  saveProgress();
   const botLine = bot.alive
     ? `<p class="hint" style="color:var(--bot)">🤖 Бот ещё бежал со счётом ${fmt(bot.score)} — ты проиграл гонку.</p>`
     : `<p class="hint" style="color:var(--t1)">🤖 Бот выбыл на ${botOutAt.toFixed(0)} с — ты его пережил!</p>`;
@@ -814,12 +877,17 @@ function gameOver(){
     ${totalsBlock}
     <div id="chartCard"><canvas id="chart" width="300" height="150"></canvas></div>
     <p class="hint"><span style="color:var(--player)">━</span> ты · <span style="color:var(--bot)">━</span> бот · 🟠 гэмбл · 🔴 удар</p>
-    <button id="again">Заново</button>`;
+    <div class="wallet">💰 +${fmt(earned)} → ${fmt(progress.wallet)}</div>
+    <div style="display:flex; gap:10px">
+      <button id="again">Заново</button>
+      <button id="menuBtn" class="secondary">Меню</button>
+    </div>`;
   el.overlay.classList.remove('hidden');
   drawChart(document.getElementById('chart'));
   document.getElementById('again').onclick = start;
+  document.getElementById('menuBtn').onclick = renderMenu;
 }
-document.getElementById('startBtn').onclick = start;
+renderMenu();
 
 // ================== ГРАФИК ==================
 function drawChart(canvas2d){
