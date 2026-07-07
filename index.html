@@ -667,7 +667,8 @@ function doSlide(p){
 }
 
 // ================== ИИ БОТА ==================
-// Бот решает, что делать, а исполняет с человеческой задержкой 0.1–0.7 с.
+// Бот выбирает лучшую из всех полос (кроме полосы игрока) и идёт к ней
+// шаг за шагом; каждый шаг исполняется с человеческой задержкой 0.1–0.7 с.
 function botThink(){
   const HORIZON = 34;
   const nearest = lane => {
@@ -685,45 +686,37 @@ function botThink(){
     const s = bot.score;
     return {t1:100, t2:s*0.03, t3:s*0.05, t4:s*0.25, obstacle:-100, overhead:-100}[en.type];
   };
-  const cur = nearest(bot.lane);
-  let action = null;
-  if(cur && (cur.type === 'obstacle' || cur.type === 'overhead') && cur.mesh.position.z > -HORIZON*0.65){
-    // угроза впереди: уйти в полосу получше, иначе прыжок/подкат
-    const opts = [];
-    for(const d of [-1, 1]){
-      const l = bot.lane + d;
-      if(l < 0 || l >= LANES) continue;
-      if(p1.alive && l === p1.lane) continue; // полоса игрока — не вариант
-      opts.push({d, v: value(nearest(l))});
-    }
-    opts.sort((a,b) => b.v - a.v);
-    if(opts.length && opts[0].v >= 0) action = opts[0].d < 0 ? 'left' : 'right';
-    else action = cur.type === 'obstacle' ? 'jump' : 'slide';
-  } else {
-    // охота за лучшей монетой в своей и соседних полосах
-    const opts = [{d:0, v:value(cur && cur.type[0] === 't' ? cur : null)}];
-    for(const d of [-1, 1]){
-      const l = bot.lane + d;
-      if(l < 0 || l >= LANES) continue;
-      if(p1.alive && l === p1.lane) continue; // полоса игрока — не вариант
-      const en = nearest(l);
-      opts.push({d, v: value(en && en.type[0] === 't' ? en : null)});
-    }
-    opts.sort((a,b) => b.v - a.v);
-    if(opts[0].v > 0 && opts[0].d !== 0) action = opts[0].d < 0 ? 'left' : 'right';
+  // ценность полосы с учётом пути до неё (соседняя — бесплатно, дальше — штраф)
+  const netValue = l => value(nearest(l)) - Math.max(0, Math.abs(l - bot.lane) - 1) * 12;
+  const candidates = [];
+  for(let l = 0; l < LANES; l++){
+    if(p1.alive && l === p1.lane) continue; // полоса игрока — не вариант
+    candidates.push({l, v: netValue(l)});
   }
-  if(action) botPlan = {action, at: t + 0.1 + Math.random()*0.6}; // случайная задержка реакции
+  const cur = nearest(bot.lane);
+  let target = null, dodge = null;
+  if(cur && (cur.type === 'obstacle' || cur.type === 'overhead') && cur.mesh.position.z > -HORIZON*0.65){
+    // угроза впереди: уйти в лучшую доступную полосу, иначе прыжок/подкат
+    const others = candidates.filter(c => c.l !== bot.lane).sort((a,b) => b.v - a.v);
+    if(others.length && others[0].v >= 0) target = others[0].l;
+    else dodge = cur.type === 'obstacle' ? 'jump' : 'slide';
+  } else {
+    // охота: лучшая монета среди всех доступных полос
+    candidates.sort((a,b) => b.v - a.v);
+    if(candidates.length && candidates[0].v > 0 && candidates[0].l !== bot.lane) target = candidates[0].l;
+  }
+  if(target != null) botPlan = {target, at: t + 0.1 + Math.random()*0.6};
+  else if(dodge)     botPlan = {action: dodge, at: t + 0.1 + Math.random()*0.6};
 }
 function botAct(){
-  const a = botPlan.action; botPlan = null;
-  if(a === 'left' || a === 'right'){
-    const d = a === 'left' ? -1 : 1;
-    // за время реакции игрок мог занять целевую полосу — тогда отменяем и передумываем
-    if(p1.alive && bot.lane + d === p1.lane) return;
-    tryMove(bot, p1, d);
-  }
-  else if(a === 'jump') doJump(bot);
-  else if(a === 'slide') doSlide(bot);
+  const plan = botPlan; botPlan = null;
+  if(plan.action === 'jump') return doJump(bot);
+  if(plan.action === 'slide') return doSlide(bot);
+  // за время реакции игрок мог занять целевую полосу — отменяем и передумываем
+  if(p1.alive && plan.target === p1.lane) return;
+  const d = Math.sign(plan.target - bot.lane);
+  if(d === 0) return;
+  tryMove(bot, p1, d); // если на пути полоса игрока — tryMove перепрыгнет через неё
 }
 
 // ================== ВВОД ==================
