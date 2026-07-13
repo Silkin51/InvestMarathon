@@ -78,6 +78,7 @@
   .totals .col i{font-style:normal; font-weight:400; color:var(--muted); font-size:11px; margin-left:4px;}
   .totals .pos{color:var(--t1);} .totals .neg{color:var(--obstacle);} .totals .dim{color:#4a5462; font-weight:400;}
   .hint{font-size:12px; color:#93a0b0; line-height:1.5; max-width:340px;}
+  .verdict{font-style:italic; font-size:14px; line-height:1.45; max-width:340px; margin:0;}
   kbd{background:#222b38; border:1px solid var(--line); border-bottom-width:2px; border-radius:5px;
     padding:1px 6px; font-size:12px; font-family:inherit;}
   button{background:var(--player); color:#06121f; border:0; border-radius:10px; padding:12px 26px;
@@ -775,6 +776,33 @@ function botDies(){
   el.tag2.classList.add('hidden');
   log('🤖 бот выбыл!', 'var(--bot)');
 }
+// ироничный вердикт: по соотношению доходов игрока и бота из разных источников
+function verdictPhrase(){
+  const s = p1.stats, b = bot.stats;
+  const myG = s.t3.sum + s.t4.sum,  botG = b.t3.sum + b.t4.sum;   // гэмблы
+  const myF = s.t1.sum + s.t2.sum,  botF = b.t1.sum + b.t2.sum;   // фиксы и множители
+  if(!bot.alive){ // победа
+    if(botG <= -300)
+      return 'Бот поймал маржин-колл. Даже искусственный интеллект верит в «последнюю ставочку».';
+    if(b.bar.sum <= s.bar.sum - 200)
+      return 'Бот вложился в барьеры на всю котлету. Смелая ставка на инфраструктуру не зашла.';
+    if(myG >= Math.max(300, myF))
+      return 'Стратегия «казино» сработала. Аналитики назовут это гениальностью — не разубеждай.';
+    if(myF >= Math.max(200, Math.abs(myG)))
+      return 'Скучные +100 обыграли все иксы. Депозит — тихий чемпион этого забега.';
+    return 'Ты просто не умер раньше бота. В мире инвестиций это называется «альфа».';
+  } else { // поражение
+    if(myG <= -300)
+      return 'Казино всегда выигрывает. Сегодня оно было в сером костюме со стальным кейсом.';
+    if(s.bar.sum <= b.bar.sum - 200)
+      return 'Ты диверсифицировался в барьеры. Портфель смелый, срок жизни — короткий.';
+    if(botF >= myF*1.5 + 50)
+      return 'Пока ты ждал иксы, бот пылесосил скучные +100. Скука оказалась доходнее.';
+    if(myG > 0)
+      return 'Гэмблы даже окупились, но рынок остался иррациональным дольше, чем ты — платёжеспособным.';
+    return 'Доходов не хватило даже на комиссии за бег. Бот делает вид, что скорбит.';
+  }
+}
 function gameOver(){
   state = 'over';
   history.push({t, y:0, yb:bot.alive ? Math.max(0, bot.score) : null});
@@ -804,6 +832,7 @@ function gameOver(){
       <span class="col" style="color:var(--player)">Ты</span><span class="col" style="color:var(--bot)">Бот</span></div>
     ${totalRows}</div>` : '';
   el.overlay.innerHTML = `<h1>Игра окончена</h1>
+    <p class="verdict" style="color:${bot.alive ? 'var(--bot)' : 'var(--t1)'}">${verdictPhrase()}</p>
     <div class="stats">
       <div class="s"><b>${Math.floor(distance)} м</b><span>дистанция</span></div>
       <div class="s"><b>${fmt(p1.peak)}</b><span>пик счёта</span></div>
